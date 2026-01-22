@@ -1,1 +1,829 @@
-{"metadata":{"kernelspec":{"language":"python","display_name":"Python 3","name":"python3"},"language_info":{"name":"python","version":"3.12.12","mimetype":"text/x-python","codemirror_mode":{"name":"ipython","version":3},"pygments_lexer":"ipython3","nbconvert_exporter":"python","file_extension":".py"},"kaggle":{"accelerator":"none","dataSources":[{"sourceId":2485,"sourceType":"datasetVersion","datasetId":1379}],"dockerImageVersionId":31259,"isInternetEnabled":true,"language":"python","sourceType":"notebook","isGpuEnabled":false}},"nbformat_minor":4,"nbformat":4,"cells":[{"cell_type":"markdown","source":"### 房价预测\n* 影响因素 卧室 卫生间 居住面积 个数 $x_1,x_2,x_3$\n* 成交价 $y = w_1x_1+w_2x_2+w_3x_3+b$","metadata":{}},{"cell_type":"markdown","source":"* $X = [x_1,x_2,...,x_n]^T$\n* $W = [w_1,w_2,...,w_n]^T$\n* $y_{pred} = w_1x_1+w_2x_2+...+w_nx_n+b =  <W,X>+b$","metadata":{}},{"cell_type":"markdown","source":"*  **可以看作单层神经网络**","metadata":{}},{"cell_type":"markdown","source":"* 损失 $L = \\frac{1}{2n} (y_{true}-y_{pred})^2 = \\frac{1}{2n} || y_{true}-Xw||^2$\n* $X = [X,1]  w = [w,b]^T$   找到最优参数\n* $\\frac{\\partial}{\\partial w}L=0$\n* $=> \\frac{1}{n}(y_{true}-Xw)^TX=0$\n* $=> w^*=(X^TX)^{-1}X^Ty_{true}$","metadata":{}},{"cell_type":"code","source":"%matplotlib inline\nimport random\nimport torch\nimport matplotlib.pyplot as plt\nfrom sklearn.model_selection import train_test_split\nimport torch.optim as optim","metadata":{"trusted":true,"execution":{"iopub.status.busy":"2026-01-22T10:29:14.143643Z","iopub.execute_input":"2026-01-22T10:29:14.143870Z","iopub.status.idle":"2026-01-22T10:29:14.168002Z","shell.execute_reply.started":"2026-01-22T10:29:14.143847Z","shell.execute_reply":"2026-01-22T10:29:14.166696Z"}},"outputs":[],"execution_count":null},{"cell_type":"code","source":"path = r'/kaggle/input/bostonhoustingmlnd/housing.csv'\nimport pandas as pd \ndata = pd.read_csv(path)\ndata.head()","metadata":{"trusted":true,"execution":{"iopub.status.busy":"2026-01-22T10:29:14.169632Z","iopub.execute_input":"2026-01-22T10:29:14.169923Z","iopub.status.idle":"2026-01-22T10:29:14.208348Z","shell.execute_reply.started":"2026-01-22T10:29:14.169895Z","shell.execute_reply":"2026-01-22T10:29:14.207537Z"}},"outputs":[],"execution_count":null},{"cell_type":"code","source":"data.isnull().sum()","metadata":{"trusted":true,"execution":{"iopub.status.busy":"2026-01-22T10:29:14.209435Z","iopub.execute_input":"2026-01-22T10:29:14.209595Z","iopub.status.idle":"2026-01-22T10:29:14.215554Z","shell.execute_reply.started":"2026-01-22T10:29:14.209578Z","shell.execute_reply":"2026-01-22T10:29:14.214640Z"}},"outputs":[],"execution_count":null},{"cell_type":"code","source":"data.shape","metadata":{"trusted":true,"execution":{"iopub.status.busy":"2026-01-22T10:29:14.216345Z","iopub.execute_input":"2026-01-22T10:29:14.216530Z","iopub.status.idle":"2026-01-22T10:29:14.236262Z","shell.execute_reply.started":"2026-01-22T10:29:14.216512Z","shell.execute_reply":"2026-01-22T10:29:14.235486Z"}},"outputs":[],"execution_count":null},{"cell_type":"code","source":"X = data.iloc[:,:3].values\ny = data.iloc[:,3].values\nfrom sklearn.preprocessing import StandardScaler\nscaler = StandardScaler()\nX_scaled = scaler.fit_transform(X) \ny_scaled = scaler.fit_transform(y.reshape(-1, 1))\nX_tensor = torch.tensor(X_scaled,dtype = torch.float32)\ny_tensor = torch.tensor(y_scaled,dtype = torch.float32).reshape(-1,1)","metadata":{"trusted":true,"execution":{"iopub.status.busy":"2026-01-22T10:29:14.238554Z","iopub.execute_input":"2026-01-22T10:29:14.238841Z","iopub.status.idle":"2026-01-22T10:29:14.255813Z","shell.execute_reply.started":"2026-01-22T10:29:14.238820Z","shell.execute_reply":"2026-01-22T10:29:14.254952Z"}},"outputs":[],"execution_count":null},{"cell_type":"code","source":"batch_size = 30\nimport torch\nimport random\n\ndef data_iter(batch_size, features, labels):\n    num = len(features)\n    indices = list(range(num))\n    random.shuffle(indices)  # 随机打乱索引\n    \n    for i in range(0, num, batch_size):\n        # 获取当前批次的索引\n        batch_indices = indices[i:min(i+batch_size, num)]\n        batch_features = features[batch_indices]\n        batch_labels = labels[batch_indices]\n        \n        yield batch_features, batch_labels","metadata":{"trusted":true,"execution":{"iopub.status.busy":"2026-01-22T10:29:14.256775Z","iopub.execute_input":"2026-01-22T10:29:14.256952Z","iopub.status.idle":"2026-01-22T10:29:14.273305Z","shell.execute_reply.started":"2026-01-22T10:29:14.256934Z","shell.execute_reply":"2026-01-22T10:29:14.272527Z"}},"outputs":[],"execution_count":null},{"cell_type":"code","source":"for i,z in data_iter(batch_size,X_tensor,y_tensor):\n    print(i.shape,z.shape)\n    break","metadata":{"trusted":true,"execution":{"iopub.status.busy":"2026-01-22T10:29:14.274944Z","iopub.execute_input":"2026-01-22T10:29:14.275368Z","iopub.status.idle":"2026-01-22T10:29:14.301388Z","shell.execute_reply.started":"2026-01-22T10:29:14.275343Z","shell.execute_reply":"2026-01-22T10:29:14.300593Z"}},"outputs":[],"execution_count":null},{"cell_type":"code","source":"w = torch.normal(0,0.01,size=(3,1),requires_grad=True)\nb = torch.zeros(1,requires_grad=True)","metadata":{"trusted":true,"execution":{"iopub.status.busy":"2026-01-22T10:29:14.302356Z","iopub.execute_input":"2026-01-22T10:29:14.302575Z","iopub.status.idle":"2026-01-22T10:29:14.323789Z","shell.execute_reply.started":"2026-01-22T10:29:14.302555Z","shell.execute_reply":"2026-01-22T10:29:14.323048Z"}},"outputs":[],"execution_count":null},{"cell_type":"code","source":"def linear(X,w,b):\n    return torch.matmul(X,w)+b","metadata":{"trusted":true,"execution":{"iopub.status.busy":"2026-01-22T10:29:14.324649Z","iopub.execute_input":"2026-01-22T10:29:14.324875Z","iopub.status.idle":"2026-01-22T10:29:14.348729Z","shell.execute_reply.started":"2026-01-22T10:29:14.324855Z","shell.execute_reply":"2026-01-22T10:29:14.347583Z"}},"outputs":[],"execution_count":null},{"cell_type":"code","source":"def loss(p,y):\n    return (p-y.reshape(p.shape))**2 / 2","metadata":{"trusted":true,"execution":{"iopub.status.busy":"2026-01-22T10:29:14.349987Z","iopub.execute_input":"2026-01-22T10:29:14.350549Z","iopub.status.idle":"2026-01-22T10:29:14.368104Z","shell.execute_reply.started":"2026-01-22T10:29:14.350502Z","shell.execute_reply":"2026-01-22T10:29:14.367366Z"}},"outputs":[],"execution_count":null},{"cell_type":"code","source":"def sgd(params,lr,batch_size):\n    with torch.no_grad():\n        for param in params:\n            param -= lr*param.grad / batch_size\n            param.grad.zero_()\n    ","metadata":{"trusted":true,"execution":{"iopub.status.busy":"2026-01-22T10:29:14.370260Z","iopub.execute_input":"2026-01-22T10:29:14.370526Z","iopub.status.idle":"2026-01-22T10:29:14.385859Z","shell.execute_reply.started":"2026-01-22T10:29:14.370504Z","shell.execute_reply":"2026-01-22T10:29:14.385085Z"}},"outputs":[],"execution_count":null},{"cell_type":"code","source":"lr = 0.01\nepochs = 5\nopt = optim.Adam([w,b], lr=0.01)\nfor epoch in range(epochs):\n    for X,y in data_iter(batch_size,X_tensor,y_tensor):\n        l = loss(linear(X,w,b),y)\n        l.sum().backward()\n        sgd([w,b],lr,batch_size)\n        # opt.step()#更新\n        # opt.zero_grad()#请梯度\n    with torch.no_grad():\n        l = loss(linear(X_tensor,w,b),y_tensor).mean()\n        print(\"epoch\",epoch,\"\\tloss\",l.item(),\"\\n\")","metadata":{"trusted":true,"execution":{"iopub.status.busy":"2026-01-22T10:29:14.386678Z","iopub.execute_input":"2026-01-22T10:29:14.386858Z","iopub.status.idle":"2026-01-22T10:29:14.430028Z","shell.execute_reply.started":"2026-01-22T10:29:14.386841Z","shell.execute_reply":"2026-01-22T10:29:14.429442Z"}},"outputs":[],"execution_count":null},{"cell_type":"code","source":"!jupyter nbconvert --to markdown learn_2.ipynb","metadata":{"trusted":true,"execution":{"iopub.status.busy":"2026-01-22T10:29:40.837186Z","iopub.execute_input":"2026-01-22T10:29:40.837452Z","iopub.status.idle":"2026-01-22T10:29:44.169526Z","shell.execute_reply.started":"2026-01-22T10:29:40.837433Z","shell.execute_reply":"2026-01-22T10:29:44.168635Z"}},"outputs":[],"execution_count":null}]}
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "id": "00c10003",
+   "metadata": {
+    "papermill": {
+     "duration": 0.00391,
+     "end_time": "2026-01-22T10:51:01.312752",
+     "exception": false,
+     "start_time": "2026-01-22T10:51:01.308842",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "source": [
+    "### 房价预测\n",
+    "* 影响因素 卧室 卫生间 居住面积 个数 $x_1,x_2,x_3$\n",
+    "* 成交价 $y = w_1x_1+w_2x_2+w_3x_3+b$"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "628b2acc",
+   "metadata": {
+    "papermill": {
+     "duration": 0.003294,
+     "end_time": "2026-01-22T10:51:01.319037",
+     "exception": false,
+     "start_time": "2026-01-22T10:51:01.315743",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "source": [
+    "* $X = [x_1,x_2,...,x_n]^T$\n",
+    "* $W = [w_1,w_2,...,w_n]^T$\n",
+    "* $y_{pred} = w_1x_1+w_2x_2+...+w_nx_n+b =  <W,X>+b$"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "9e49c1ce",
+   "metadata": {
+    "papermill": {
+     "duration": 0.002893,
+     "end_time": "2026-01-22T10:51:01.324959",
+     "exception": false,
+     "start_time": "2026-01-22T10:51:01.322066",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "source": [
+    "*  **可以看作单层神经网络**"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "6414eb73",
+   "metadata": {
+    "papermill": {
+     "duration": 0.002886,
+     "end_time": "2026-01-22T10:51:01.330657",
+     "exception": false,
+     "start_time": "2026-01-22T10:51:01.327771",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "source": [
+    "* 损失 $L = \\frac{1}{2n} (y_{true}-y_{pred})^2 = \\frac{1}{2n} || y_{true}-Xw||^2$\n",
+    "* $X = [X,1]  w = [w,b]^T$   找到最优参数\n",
+    "* $\\frac{\\partial}{\\partial w}L=0$\n",
+    "* $=> \\frac{1}{n}(y_{true}-Xw)^TX=0$\n",
+    "* $=> w^*=(X^TX)^{-1}X^Ty_{true}$"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 1,
+   "id": "d9555d13",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2026-01-22T10:51:01.338036Z",
+     "iopub.status.busy": "2026-01-22T10:51:01.337688Z",
+     "iopub.status.idle": "2026-01-22T10:51:10.478798Z",
+     "shell.execute_reply": "2026-01-22T10:51:10.477670Z"
+    },
+    "papermill": {
+     "duration": 9.147728,
+     "end_time": "2026-01-22T10:51:10.481163",
+     "exception": false,
+     "start_time": "2026-01-22T10:51:01.333435",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "%matplotlib inline\n",
+    "import random\n",
+    "import torch\n",
+    "import matplotlib.pyplot as plt\n",
+    "from sklearn.model_selection import train_test_split\n",
+    "import torch.optim as optim"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 2,
+   "id": "a068e7a3",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2026-01-22T10:51:10.489019Z",
+     "iopub.status.busy": "2026-01-22T10:51:10.488451Z",
+     "iopub.status.idle": "2026-01-22T10:51:10.542154Z",
+     "shell.execute_reply": "2026-01-22T10:51:10.541113Z"
+    },
+    "papermill": {
+     "duration": 0.060133,
+     "end_time": "2026-01-22T10:51:10.544269",
+     "exception": false,
+     "start_time": "2026-01-22T10:51:10.484136",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<style scoped>\n",
+       "    .dataframe tbody tr th:only-of-type {\n",
+       "        vertical-align: middle;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe tbody tr th {\n",
+       "        vertical-align: top;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe thead th {\n",
+       "        text-align: right;\n",
+       "    }\n",
+       "</style>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>RM</th>\n",
+       "      <th>LSTAT</th>\n",
+       "      <th>PTRATIO</th>\n",
+       "      <th>MEDV</th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>0</th>\n",
+       "      <td>6.575</td>\n",
+       "      <td>4.98</td>\n",
+       "      <td>15.3</td>\n",
+       "      <td>504000.0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1</th>\n",
+       "      <td>6.421</td>\n",
+       "      <td>9.14</td>\n",
+       "      <td>17.8</td>\n",
+       "      <td>453600.0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>2</th>\n",
+       "      <td>7.185</td>\n",
+       "      <td>4.03</td>\n",
+       "      <td>17.8</td>\n",
+       "      <td>728700.0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>3</th>\n",
+       "      <td>6.998</td>\n",
+       "      <td>2.94</td>\n",
+       "      <td>18.7</td>\n",
+       "      <td>701400.0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>4</th>\n",
+       "      <td>7.147</td>\n",
+       "      <td>5.33</td>\n",
+       "      <td>18.7</td>\n",
+       "      <td>760200.0</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "      RM  LSTAT  PTRATIO      MEDV\n",
+       "0  6.575   4.98     15.3  504000.0\n",
+       "1  6.421   9.14     17.8  453600.0\n",
+       "2  7.185   4.03     17.8  728700.0\n",
+       "3  6.998   2.94     18.7  701400.0\n",
+       "4  7.147   5.33     18.7  760200.0"
+      ]
+     },
+     "execution_count": 2,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "path = r'/kaggle/input/bostonhoustingmlnd/housing.csv'\n",
+    "import pandas as pd \n",
+    "data = pd.read_csv(path)\n",
+    "data.head()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 3,
+   "id": "a16fdaee",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2026-01-22T10:51:10.552634Z",
+     "iopub.status.busy": "2026-01-22T10:51:10.552290Z",
+     "iopub.status.idle": "2026-01-22T10:51:10.559928Z",
+     "shell.execute_reply": "2026-01-22T10:51:10.558942Z"
+    },
+    "papermill": {
+     "duration": 0.015572,
+     "end_time": "2026-01-22T10:51:10.563297",
+     "exception": false,
+     "start_time": "2026-01-22T10:51:10.547725",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "RM         0\n",
+       "LSTAT      0\n",
+       "PTRATIO    0\n",
+       "MEDV       0\n",
+       "dtype: int64"
+      ]
+     },
+     "execution_count": 3,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "data.isnull().sum()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 4,
+   "id": "c7e99647",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2026-01-22T10:51:10.572746Z",
+     "iopub.status.busy": "2026-01-22T10:51:10.572397Z",
+     "iopub.status.idle": "2026-01-22T10:51:10.579140Z",
+     "shell.execute_reply": "2026-01-22T10:51:10.577987Z"
+    },
+    "papermill": {
+     "duration": 0.014188,
+     "end_time": "2026-01-22T10:51:10.581266",
+     "exception": false,
+     "start_time": "2026-01-22T10:51:10.567078",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "(489, 4)"
+      ]
+     },
+     "execution_count": 4,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "data.shape"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 5,
+   "id": "47576ac3",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2026-01-22T10:51:10.589795Z",
+     "iopub.status.busy": "2026-01-22T10:51:10.589449Z",
+     "iopub.status.idle": "2026-01-22T10:51:10.645372Z",
+     "shell.execute_reply": "2026-01-22T10:51:10.644328Z"
+    },
+    "papermill": {
+     "duration": 0.06305,
+     "end_time": "2026-01-22T10:51:10.647686",
+     "exception": false,
+     "start_time": "2026-01-22T10:51:10.584636",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "X = data.iloc[:,:3].values\n",
+    "y = data.iloc[:,3].values\n",
+    "from sklearn.preprocessing import StandardScaler\n",
+    "scaler = StandardScaler()\n",
+    "X_scaled = scaler.fit_transform(X) \n",
+    "y_scaled = scaler.fit_transform(y.reshape(-1, 1))\n",
+    "X_tensor = torch.tensor(X_scaled,dtype = torch.float32)\n",
+    "y_tensor = torch.tensor(y_scaled,dtype = torch.float32).reshape(-1,1)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 6,
+   "id": "900644e7",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2026-01-22T10:51:10.656623Z",
+     "iopub.status.busy": "2026-01-22T10:51:10.656293Z",
+     "iopub.status.idle": "2026-01-22T10:51:10.662651Z",
+     "shell.execute_reply": "2026-01-22T10:51:10.661579Z"
+    },
+    "papermill": {
+     "duration": 0.013563,
+     "end_time": "2026-01-22T10:51:10.664652",
+     "exception": false,
+     "start_time": "2026-01-22T10:51:10.651089",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "batch_size = 30\n",
+    "import torch\n",
+    "import random\n",
+    "\n",
+    "def data_iter(batch_size, features, labels):\n",
+    "    num = len(features)\n",
+    "    indices = list(range(num))\n",
+    "    random.shuffle(indices)  # 随机打乱索引\n",
+    "    \n",
+    "    for i in range(0, num, batch_size):\n",
+    "        # 获取当前批次的索引\n",
+    "        batch_indices = indices[i:min(i+batch_size, num)]\n",
+    "        batch_features = features[batch_indices]\n",
+    "        batch_labels = labels[batch_indices]\n",
+    "        \n",
+    "        yield batch_features, batch_labels"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 7,
+   "id": "48158c02",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2026-01-22T10:51:10.673160Z",
+     "iopub.status.busy": "2026-01-22T10:51:10.672786Z",
+     "iopub.status.idle": "2026-01-22T10:51:10.685583Z",
+     "shell.execute_reply": "2026-01-22T10:51:10.684355Z"
+    },
+    "papermill": {
+     "duration": 0.019686,
+     "end_time": "2026-01-22T10:51:10.687858",
+     "exception": false,
+     "start_time": "2026-01-22T10:51:10.668172",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "torch.Size([30, 3]) torch.Size([30, 1])\n"
+     ]
+    }
+   ],
+   "source": [
+    "for i,z in data_iter(batch_size,X_tensor,y_tensor):\n",
+    "    print(i.shape,z.shape)\n",
+    "    break"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 8,
+   "id": "23c7c8ca",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2026-01-22T10:51:10.696635Z",
+     "iopub.status.busy": "2026-01-22T10:51:10.696298Z",
+     "iopub.status.idle": "2026-01-22T10:51:10.714308Z",
+     "shell.execute_reply": "2026-01-22T10:51:10.713443Z"
+    },
+    "papermill": {
+     "duration": 0.025161,
+     "end_time": "2026-01-22T10:51:10.716603",
+     "exception": false,
+     "start_time": "2026-01-22T10:51:10.691442",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "w = torch.normal(0,0.01,size=(3,1),requires_grad=True)\n",
+    "b = torch.zeros(1,requires_grad=True)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 9,
+   "id": "b5bb600a",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2026-01-22T10:51:10.725110Z",
+     "iopub.status.busy": "2026-01-22T10:51:10.724720Z",
+     "iopub.status.idle": "2026-01-22T10:51:10.731448Z",
+     "shell.execute_reply": "2026-01-22T10:51:10.730312Z"
+    },
+    "papermill": {
+     "duration": 0.013568,
+     "end_time": "2026-01-22T10:51:10.733609",
+     "exception": false,
+     "start_time": "2026-01-22T10:51:10.720041",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "def linear(X,w,b):\n",
+    "    return torch.matmul(X,w)+b"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 10,
+   "id": "cc5a8e79",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2026-01-22T10:51:10.742384Z",
+     "iopub.status.busy": "2026-01-22T10:51:10.742051Z",
+     "iopub.status.idle": "2026-01-22T10:51:10.747324Z",
+     "shell.execute_reply": "2026-01-22T10:51:10.746180Z"
+    },
+    "papermill": {
+     "duration": 0.012278,
+     "end_time": "2026-01-22T10:51:10.749499",
+     "exception": false,
+     "start_time": "2026-01-22T10:51:10.737221",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "def loss(p,y):\n",
+    "    return (p-y.reshape(p.shape))**2 / 2"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 11,
+   "id": "cf3290c9",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2026-01-22T10:51:10.758763Z",
+     "iopub.status.busy": "2026-01-22T10:51:10.757803Z",
+     "iopub.status.idle": "2026-01-22T10:51:10.763632Z",
+     "shell.execute_reply": "2026-01-22T10:51:10.762409Z"
+    },
+    "papermill": {
+     "duration": 0.012459,
+     "end_time": "2026-01-22T10:51:10.765651",
+     "exception": false,
+     "start_time": "2026-01-22T10:51:10.753192",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "def sgd(params,lr,batch_size):\n",
+    "    with torch.no_grad():\n",
+    "        for param in params:\n",
+    "            param -= lr*param.grad / batch_size\n",
+    "            param.grad.zero_()\n",
+    "    "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 12,
+   "id": "23c8ba38",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2026-01-22T10:51:10.774560Z",
+     "iopub.status.busy": "2026-01-22T10:51:10.773795Z",
+     "iopub.status.idle": "2026-01-22T10:51:17.711600Z",
+     "shell.execute_reply": "2026-01-22T10:51:17.710533Z"
+    },
+    "papermill": {
+     "duration": 6.944777,
+     "end_time": "2026-01-22T10:51:17.713971",
+     "exception": false,
+     "start_time": "2026-01-22T10:51:10.769194",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "epoch 0 \tloss 0.34111344814300537 \n",
+      "\n",
+      "epoch 1 \tloss 0.249769389629364 \n",
+      "\n",
+      "epoch 2 \tloss 0.1998877376317978 \n",
+      "\n",
+      "epoch 3 \tloss 0.1730547547340393 \n",
+      "\n",
+      "epoch 4 \tloss 0.15870581567287445 \n",
+      "\n"
+     ]
+    }
+   ],
+   "source": [
+    "lr = 0.01\n",
+    "epochs = 5\n",
+    "opt = optim.Adam([w,b], lr=0.01)\n",
+    "for epoch in range(epochs):\n",
+    "    for X,y in data_iter(batch_size,X_tensor,y_tensor):\n",
+    "        l = loss(linear(X,w,b),y)\n",
+    "        l.sum().backward()\n",
+    "        sgd([w,b],lr,batch_size)\n",
+    "        # opt.step()#更新\n",
+    "        # opt.zero_grad()#请梯度\n",
+    "    with torch.no_grad():\n",
+    "        l = loss(linear(X_tensor,w,b),y_tensor).mean()\n",
+    "        print(\"epoch\",epoch,\"\\tloss\",l.item(),\"\\n\")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 13,
+   "id": "03454b35",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2026-01-22T10:51:17.722996Z",
+     "iopub.status.busy": "2026-01-22T10:51:17.722460Z",
+     "iopub.status.idle": "2026-01-22T10:51:21.795593Z",
+     "shell.execute_reply": "2026-01-22T10:51:21.794202Z"
+    },
+    "papermill": {
+     "duration": 4.080359,
+     "end_time": "2026-01-22T10:51:21.797830",
+     "exception": false,
+     "start_time": "2026-01-22T10:51:17.717471",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "/usr/local/lib/python3.12/dist-packages/mistune.py:435: SyntaxWarning: invalid escape sequence '\\|'\r\n",
+      "  cells[i][c] = re.sub('\\\\\\\\\\|', '|', cell)\r\n",
+      "/usr/local/lib/python3.12/dist-packages/nbconvert/filters/filter_links.py:36: SyntaxWarning: invalid escape sequence '\\_'\r\n",
+      "  text = re.sub(r'_', '\\_', text) # Escape underscores in display text\r\n",
+      "[NbConvertApp] WARNING | pattern 'learn_2.ipynb' matched no files\r\n",
+      "This application is used to convert notebook files (*.ipynb)\r\n",
+      "        to various other formats.\r\n",
+      "\r\n",
+      "        WARNING: THE COMMANDLINE INTERFACE MAY CHANGE IN FUTURE RELEASES.\r\n",
+      "\r\n",
+      "Options\r\n",
+      "=======\r\n",
+      "The options below are convenience aliases to configurable class-options,\r\n",
+      "as listed in the \"Equivalent to\" description-line of the aliases.\r\n",
+      "To see all configurable class-options for some <cmd>, use:\r\n",
+      "    <cmd> --help-all\r\n",
+      "\r\n",
+      "--debug\r\n",
+      "    set log level to logging.DEBUG (maximize logging output)\r\n",
+      "    Equivalent to: [--Application.log_level=10]\r\n",
+      "--show-config\r\n",
+      "    Show the application's configuration (human-readable format)\r\n",
+      "    Equivalent to: [--Application.show_config=True]\r\n",
+      "--show-config-json\r\n",
+      "    Show the application's configuration (json format)\r\n",
+      "    Equivalent to: [--Application.show_config_json=True]\r\n",
+      "--generate-config\r\n",
+      "    generate default config file\r\n",
+      "    Equivalent to: [--JupyterApp.generate_config=True]\r\n",
+      "-y\r\n",
+      "    Answer yes to any questions instead of prompting.\r\n",
+      "    Equivalent to: [--JupyterApp.answer_yes=True]\r\n",
+      "--execute\r\n",
+      "    Execute the notebook prior to export.\r\n",
+      "    Equivalent to: [--ExecutePreprocessor.enabled=True]\r\n",
+      "--allow-errors\r\n",
+      "    Continue notebook execution even if one of the cells throws an error and include the error message in the cell output (the default behaviour is to abort conversion). This flag is only relevant if '--execute' was specified, too.\r\n",
+      "    Equivalent to: [--ExecutePreprocessor.allow_errors=True]\r\n",
+      "--stdin\r\n",
+      "    read a single notebook file from stdin. Write the resulting notebook with default basename 'notebook.*'\r\n",
+      "    Equivalent to: [--NbConvertApp.from_stdin=True]\r\n",
+      "--stdout\r\n",
+      "    Write notebook output to stdout instead of files.\r\n",
+      "    Equivalent to: [--NbConvertApp.writer_class=StdoutWriter]\r\n",
+      "--inplace\r\n",
+      "    Run nbconvert in place, overwriting the existing notebook (only \r\n",
+      "            relevant when converting to notebook format)\r\n",
+      "    Equivalent to: [--NbConvertApp.use_output_suffix=False --NbConvertApp.export_format=notebook --FilesWriter.build_directory=]\r\n",
+      "--clear-output\r\n",
+      "    Clear output of current file and save in place, \r\n",
+      "            overwriting the existing notebook.\r\n",
+      "    Equivalent to: [--NbConvertApp.use_output_suffix=False --NbConvertApp.export_format=notebook --FilesWriter.build_directory= --ClearOutputPreprocessor.enabled=True]\r\n",
+      "--no-prompt\r\n",
+      "    Exclude input and output prompts from converted document.\r\n",
+      "    Equivalent to: [--TemplateExporter.exclude_input_prompt=True --TemplateExporter.exclude_output_prompt=True]\r\n",
+      "--no-input\r\n",
+      "    Exclude input cells and output prompts from converted document. \r\n",
+      "            This mode is ideal for generating code-free reports.\r\n",
+      "    Equivalent to: [--TemplateExporter.exclude_output_prompt=True --TemplateExporter.exclude_input=True --TemplateExporter.exclude_input_prompt=True]\r\n",
+      "--allow-chromium-download\r\n",
+      "    Whether to allow downloading chromium if no suitable version is found on the system.\r\n",
+      "    Equivalent to: [--WebPDFExporter.allow_chromium_download=True]\r\n",
+      "--disable-chromium-sandbox\r\n",
+      "    Disable chromium security sandbox when converting to PDF..\r\n",
+      "    Equivalent to: [--WebPDFExporter.disable_sandbox=True]\r\n",
+      "--show-input\r\n",
+      "    Shows code input. This flag is only useful for dejavu users.\r\n",
+      "    Equivalent to: [--TemplateExporter.exclude_input=False]\r\n",
+      "--embed-images\r\n",
+      "    Embed the images as base64 dataurls in the output. This flag is only useful for the HTML/WebPDF/Slides exports.\r\n",
+      "    Equivalent to: [--HTMLExporter.embed_images=True]\r\n",
+      "--log-level=<Enum>\r\n",
+      "    Set the log level by value or name.\r\n",
+      "    Choices: any of [0, 10, 20, 30, 40, 50, 'DEBUG', 'INFO', 'WARN', 'ERROR', 'CRITICAL']\r\n",
+      "    Default: 30\r\n",
+      "    Equivalent to: [--Application.log_level]\r\n",
+      "--config=<Unicode>\r\n",
+      "    Full path of a config file.\r\n",
+      "    Default: ''\r\n",
+      "    Equivalent to: [--JupyterApp.config_file]\r\n",
+      "--to=<Unicode>\r\n",
+      "    The export format to be used, either one of the built-in formats\r\n",
+      "            ['asciidoc', 'custom', 'html', 'latex', 'markdown', 'notebook', 'pdf', 'python', 'rst', 'script', 'slides', 'webpdf']\r\n",
+      "            or a dotted object name that represents the import path for an\r\n",
+      "            ``Exporter`` class\r\n",
+      "    Default: ''\r\n",
+      "    Equivalent to: [--NbConvertApp.export_format]\r\n",
+      "--template=<Unicode>\r\n",
+      "    Name of the template to use\r\n",
+      "    Default: ''\r\n",
+      "    Equivalent to: [--TemplateExporter.template_name]\r\n",
+      "--template-file=<Unicode>\r\n",
+      "    Name of the template file to use\r\n",
+      "    Default: None\r\n",
+      "    Equivalent to: [--TemplateExporter.template_file]\r\n",
+      "--theme=<Unicode>\r\n",
+      "    Template specific theme(e.g. the name of a JupyterLab CSS theme distributed\r\n",
+      "    as prebuilt extension for the lab template)\r\n",
+      "    Default: 'light'\r\n",
+      "    Equivalent to: [--HTMLExporter.theme]\r\n",
+      "--writer=<DottedObjectName>\r\n",
+      "    Writer class used to write the \r\n",
+      "                                        results of the conversion\r\n",
+      "    Default: 'FilesWriter'\r\n",
+      "    Equivalent to: [--NbConvertApp.writer_class]\r\n",
+      "--post=<DottedOrNone>\r\n",
+      "    PostProcessor class used to write the\r\n",
+      "                                        results of the conversion\r\n",
+      "    Default: ''\r\n",
+      "    Equivalent to: [--NbConvertApp.postprocessor_class]\r\n",
+      "--output=<Unicode>\r\n",
+      "    overwrite base name use for output files.\r\n",
+      "                can only be used when converting one notebook at a time.\r\n",
+      "    Default: ''\r\n",
+      "    Equivalent to: [--NbConvertApp.output_base]\r\n",
+      "--output-dir=<Unicode>\r\n",
+      "    Directory to write output(s) to. Defaults\r\n",
+      "                                  to output to the directory of each notebook. To recover\r\n",
+      "                                  previous default behaviour (outputting to the current \r\n",
+      "                                  working directory) use . as the flag value.\r\n",
+      "    Default: ''\r\n",
+      "    Equivalent to: [--FilesWriter.build_directory]\r\n",
+      "--reveal-prefix=<Unicode>\r\n",
+      "    The URL prefix for reveal.js (version 3.x).\r\n",
+      "            This defaults to the reveal CDN, but can be any url pointing to a copy \r\n",
+      "            of reveal.js. \r\n",
+      "            For speaker notes to work, this must be a relative path to a local \r\n",
+      "            copy of reveal.js: e.g., \"reveal.js\".\r\n",
+      "            If a relative path is given, it must be a subdirectory of the\r\n",
+      "            current directory (from which the server is run).\r\n",
+      "            See the usage documentation\r\n",
+      "            (https://nbconvert.readthedocs.io/en/latest/usage.html#reveal-js-html-slideshow)\r\n",
+      "            for more details.\r\n",
+      "    Default: ''\r\n",
+      "    Equivalent to: [--SlidesExporter.reveal_url_prefix]\r\n",
+      "--nbformat=<Enum>\r\n",
+      "    The nbformat version to write.\r\n",
+      "            Use this to downgrade notebooks.\r\n",
+      "    Choices: any of [1, 2, 3, 4]\r\n",
+      "    Default: 4\r\n",
+      "    Equivalent to: [--NotebookExporter.nbformat_version]\r\n",
+      "\r\n",
+      "Examples\r\n",
+      "--------\r\n",
+      "\r\n",
+      "    The simplest way to use nbconvert is\r\n",
+      "\r\n",
+      "            > jupyter nbconvert mynotebook.ipynb --to html\r\n",
+      "\r\n",
+      "            Options include ['asciidoc', 'custom', 'html', 'latex', 'markdown', 'notebook', 'pdf', 'python', 'rst', 'script', 'slides', 'webpdf'].\r\n",
+      "\r\n",
+      "            > jupyter nbconvert --to latex mynotebook.ipynb\r\n",
+      "\r\n",
+      "            Both HTML and LaTeX support multiple output templates. LaTeX includes\r\n",
+      "            'base', 'article' and 'report'.  HTML includes 'basic', 'lab' and \r\n",
+      "            'classic'. You can specify the flavor of the format used.\r\n",
+      "\r\n",
+      "            > jupyter nbconvert --to html --template lab mynotebook.ipynb\r\n",
+      "\r\n",
+      "            You can also pipe the output to stdout, rather than a file\r\n",
+      "\r\n",
+      "            > jupyter nbconvert mynotebook.ipynb --stdout\r\n",
+      "\r\n",
+      "            PDF is generated via latex\r\n",
+      "\r\n",
+      "            > jupyter nbconvert mynotebook.ipynb --to pdf\r\n",
+      "\r\n",
+      "            You can get (and serve) a Reveal.js-powered slideshow\r\n",
+      "\r\n",
+      "            > jupyter nbconvert myslides.ipynb --to slides --post serve\r\n",
+      "\r\n",
+      "            Multiple notebooks can be given at the command line in a couple of \r\n",
+      "            different ways:\r\n",
+      "\r\n",
+      "            > jupyter nbconvert notebook*.ipynb\r\n",
+      "            > jupyter nbconvert notebook1.ipynb notebook2.ipynb\r\n",
+      "\r\n",
+      "            or you can specify the notebooks list in a config file, containing::\r\n",
+      "\r\n",
+      "                c.NbConvertApp.notebooks = [\"my_notebook.ipynb\"]\r\n",
+      "\r\n",
+      "            > jupyter nbconvert --config mycfg.py\r\n",
+      "\r\n",
+      "To see all available configurables, use `--help-all`.\r\n",
+      "\r\n"
+     ]
+    }
+   ],
+   "source": [
+    "!jupyter nbconvert --to markdown learn_2.ipynb"
+   ]
+  }
+ ],
+ "metadata": {
+  "kaggle": {
+   "accelerator": "none",
+   "dataSources": [
+    {
+     "datasetId": 1379,
+     "sourceId": 2485,
+     "sourceType": "datasetVersion"
+    }
+   ],
+   "dockerImageVersionId": 31259,
+   "isGpuEnabled": false,
+   "isInternetEnabled": true,
+   "language": "python",
+   "sourceType": "notebook"
+  },
+  "kernelspec": {
+   "display_name": "Python 3",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.12.12"
+  },
+  "papermill": {
+   "default_parameters": {},
+   "duration": 27.635639,
+   "end_time": "2026-01-22T10:51:25.331286",
+   "environment_variables": {},
+   "exception": null,
+   "input_path": "__notebook__.ipynb",
+   "output_path": "__notebook__.ipynb",
+   "parameters": {},
+   "start_time": "2026-01-22T10:50:57.695647",
+   "version": "2.6.0"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 5
+}
